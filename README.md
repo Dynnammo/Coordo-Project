@@ -16,8 +16,10 @@ The document contains three tables:
 | table | columns | role |
 |---|---|---|
 | `Teachers` | `Name`, `Status` (Permanent/Substitute) | everyone, permanent and substitutes |
-| `Absences` | `Teacher` (Ref), `Date` | input: who is absent, when |
-| `Substitutions` | `Teacher` (Ref), `Substitute` (Ref), `Date` | output: who covers whom |
+| `Schools` | `Name` | schools permanent teachers belong to |
+| `Levels` | `Number` | levels 1–10 for permanent teachers |
+| `Absences` | `Teacher` (Ref), `Date`, `Period` (Morning/Afternoon) | input: who is absent, when, which half-day |
+| `Substitutions` | `Teacher` (Ref), `Substitute` (Ref), `Date`, `Period` | output: who covers whom |
 
 ### Run the matcher
 
@@ -31,10 +33,15 @@ Add `--dry-run` to print the plan without writing to Grist. Use `--server` or
 
 ### Matching rules
 
-- Every absence with no existing `Substitutions` row is processed (earliest date first).
+- Every absence covers one half-day: `Morning` or `Afternoon`.
+- Every absence with no existing `Substitutions` row (same teacher, date,
+  period) is processed — earliest date first, morning before afternoon.
 - Any substitute can replace any absent teacher: subjects are not a constraint.
-- A substitute can cover at most one absence per date.
-- Among free substitutes, the least busy that day is chosen (workload balancing).
+- A substitute can cover at most one absence per (date, period).
+- **Stability first**: if a substitute covers teacher T on date D in one half,
+  they are prioritized to cover T in the other half of D too.
+- Otherwise, among free substitutes, the least busy that day is chosen
+  (workload balancing).
 - Absences with no free substitute are reported as unmatched; fix by adding
   substitutes or adjusting dates, then rerun.
 
