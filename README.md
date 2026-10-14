@@ -2,13 +2,47 @@
 
 Teacher dispatcher: match absent teachers with the best available substitutes.
 
-## Quick start
+Two workflows are supported:
+
+- **Grist (recommended)** — all data lives in the Grist document
+  [Coordo-Project](https://docs.getgrist.com/mdRfs6ggKhKU/Coordo-Project).
+  Run `scripts/grist_match.py` to fill the `Substitutions` table automatically.
+- **CSV (standalone)** — `scripts/match.py` works on local CSV files.
+
+## Grist workflow
+
+The document contains three tables:
+
+| table | columns | role |
+|---|---|---|
+| `Teachers` | `Name`, `Status` (Permanent/Substitute), `Subject` | everyone, permanent and substitutes |
+| `Absences` | `Teacher` (Ref), `Date` | input: who is absent, when |
+| `Substitutions` | `Teacher` (Ref), `Substitute` (Ref), `Date` | output: who covers whom |
+
+### Run the matcher
+
+```bash
+export GRIST_API_KEY="your-api-key"   # Grist: Account Settings > API
+python scripts/grist_match.py --doc mdRfs6ggKhKUkuhqpW1xA6
+```
+
+Add `--dry-run` to print the plan without writing to Grist. Use `--server` or
+`GRIST_SERVER` for a self-hosted instance.
+
+### Matching rules
+
+- Every absence with no existing `Substitutions` row is processed (earliest date first).
+- A substitute can cover at most one absence per date.
+- Candidates are scored: subject match with the absent teacher (+10), minus
+  current workload that day (-1 per assignment) — same subject and least-busy win.
+- Absences with no free substitute are reported as unmatched; fix by adding
+  substitutes or adjusting dates, then rerun.
+
+## CSV workflow (standalone)
 
 ```bash
 python scripts/match.py --absences data/absences.csv --subs data/substitutes.csv
 ```
-
-Or use the sample data bundled in `data/`.
 
 ## How it works
 
@@ -52,12 +86,12 @@ The matching engine assigns one substitute to each absence using a score:
 ```
 Coordo-Project/
 ├── README.md
-├── data/
-│   ├── substitutes.csv
-│   └── absences.csv
+├── data/                      # sample data for the CSV workflow
 ├── scripts/
-│   └── match.py
+│   ├── grist_match.py         # Grist pipeline (recommended)
+│   └── match.py               # standalone CSV matcher
 └── tests/
+    ├── test_grist_match.py
     └── test_match.py
 ```
 
