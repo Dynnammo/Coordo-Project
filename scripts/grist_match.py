@@ -64,19 +64,15 @@ class GristClient:
         )
 
     def list_records(self, table_id):
-        page_size = 100
-        records = []
-        while True:
-            page = self._request(
-                "GET", f"{table_id}/records?limit={page_size}&offset={len(records)}"
-            )
-            batch = page.get("records", [])
-            if not batch and not records:
-                break
-            records.extend(batch)
-            if len(batch) < page_size:
-                break
-        return records
+        """Fetch all records of a table.
+
+        The Grist REST API has no offset-based pagination: `limit` merely
+        truncates to the first N records, so requesting `limit=100` in a
+        loop would return the same page forever. Omitting `limit` returns
+        every record in a single response.
+        """
+        page = self._request("GET", f"{table_id}/records")
+        return page.get("records", [])
 
     def add_records(self, table_id, records):
         return self._request("POST", f"{table_id}/records", {"records": records})

@@ -32,6 +32,10 @@ python scripts/grist_match.py --doc mdRfs6ggKhKUkuhqpW1xA6
 Add `--dry-run` to print the plan without writing to Grist. Use `--server` or
 `GRIST_SERVER` for a self-hosted instance.
 
+Note: the Grist REST API has no offset-based pagination — `limit` only
+truncates to the first N records. The client therefore fetches each table in
+a single unbounded request, so tables of any size work.
+
 ### Matching rules
 
 - Every absence covers one half-day: `Morning` or `Afternoon`.

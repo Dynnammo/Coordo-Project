@@ -18,26 +18,41 @@ def absence(aid, teacher_id, date, period):
     return {"id": aid, "teacher_id": teacher_id, "date": date, "period": period}
 
 
-class TestListRecordsPagination(unittest.TestCase):
-    def test_multi_page_without_total_key(self):
-        """The public Grist API returns no 'total': pagination must stop when
-        a page returns fewer records than the page size."""
+class TestListRecords(unittest.TestCase):
+    """The Grist REST API has no offset pagination: limit only truncates.
+    list_records must fetch everything in one request."""
+
+    def _client_returning(self, records):
         client = GristClient("https://example", "key", "doc")
+        calls = []
 
         def fake_request(method, path, payload=None):
-            offset = int(path.split("offset=")[1])
-            if offset == 0:
-                return {"records": [{"id": i, "fields": {}} for i in range(100)]}
-            return {"records": [{"id": i, "fields": {}} for i in range(100, 142)]}
+            calls.append((method, path))
+            return {"records": records}
 
         client._request = fake_request
-        records = client.list_records("Teachers")
-        self.assertEqual(len(records), 142)
+        return client, calls
 
-    def test_single_page(self):
-        client = GristClient("https://example", "key", "doc")
-        client._request = lambda method, path, payload=None: {"records": [{"id": 1, "fields": {}}]}
-        self.assertEqual(len(client.list_records("T")), 1)
+    def test_single_request_no_limit_param(self):
+        records = [{"id": i, "fields": {}} for i in range(3)]
+        client, calls = self._client_returning(records)
+        result = client.list_records("Teachers")
+        self.assertEqual(len(result), 3)
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("limit", calls[0][1])
+        self.assertNotIn("offset", calls[0][1])
+
+    def test_more_than_100_records(self):
+        records = [{"id": i, "fields": {}} for i in range(250)]
+        client, calls = self._client_returning(records)
+        result = client.list_records("Absences")
+        self.assertEqual(len(result), 250)
+        self.assertEqual(len(calls), 1)
+
+    def test_empty_table(self):
+        client, calls = self._client_returning([])
+        self.assertEqual(client.list_records("T"), [])
+        self.assertEqual(len(calls), 1)
 
 
 class TestRequestRetry(unittest.TestCase):
