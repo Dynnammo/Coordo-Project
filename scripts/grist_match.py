@@ -57,6 +57,13 @@ class GristClient:
         return self._request("POST", f"{table_id}/records", {"records": records})
 
 
+def to_date_str(value):
+    """Normalize a Grist Date cell (epoch seconds or ISO string) to 'YYYY-MM-DD'."""
+    if isinstance(value, (int, float)):
+        return date.fromtimestamp(value).isoformat()
+    return value[:10]
+
+
 def day_of(date_str):
     return date.fromisoformat(date_str).strftime("%a").lower()
 
@@ -129,7 +136,7 @@ def fetch_state(client):
         date_val = r["fields"].get("Date")
         if teacher_id is None or date_val is None:
             continue
-        date_str = date_val[:10] if isinstance(date_val, str) else date_val
+        date_str = to_date_str(date_val)
         teacher = next((t for t in teachers if t["id"] == teacher_id), None)
         if teacher is None:
             continue
@@ -146,7 +153,7 @@ def fetch_state(client):
         date_val = r["fields"].get("Date")
         if teacher_id is None or date_val is None:
             continue
-        date_str = date_val[:10] if isinstance(date_val, str) else date_val
+        date_str = to_date_str(date_val)
         existing_pairs.add((teacher_id, date_str))
 
     return teachers, absences, existing_pairs

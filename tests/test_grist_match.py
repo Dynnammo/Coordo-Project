@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from grist_match import plan_substitutions
+from grist_match import plan_substitutions, to_date_str
 
 SUBS = [
     {"id": 11, "name": "Alice Dupont", "subject": "Math", "status": "Substitute"},
@@ -16,6 +16,14 @@ SUBS = [
 
 def absence(aid, teacher_id, subject, date):
     return {"id": aid, "teacher_id": teacher_id, "teacher_subject": subject, "date": date}
+
+
+class TestToDateStr(unittest.TestCase):
+    def test_epoch_seconds(self):
+        self.assertEqual(to_date_str(1792368000), "2026-10-19")
+
+    def test_iso_string(self):
+        self.assertEqual(to_date_str("2026-10-19"), "2026-10-19")
 
 
 class TestPlanSubstitutions(unittest.TestCase):
