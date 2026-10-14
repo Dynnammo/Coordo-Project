@@ -97,6 +97,49 @@ class TestPlanSubstitutions(unittest.TestCase):
         plans, unmatched = plan_substitutions(absences, SUBS, set())
         self.assertEqual([p["substitute_id"] for p in plans], [11, 11])
 
+    def test_come_back_rule_prioritizes_historic_pair(self):
+        # Substitute 13 covered teacher 1 before (score 2): preferred over
+        # the default lowest-id substitute 11.
+        absences = [absence(1, 1, "2026-10-19", "Morning")]
+        scores = {(1, 13): 2}
+        plans, unmatched = plan_substitutions(absences, SUBS, set(), scores)
+        self.assertEqual(len(plans), 1)
+        self.assertEqual(plans[0]["substitute_id"], 13)
+
+    def test_come_back_rule_highest_score_wins(self):
+        scores = {(1, 12): 3, (1, 14): 5}
+        absences = [absence(1, 1, "2026-10-19", "Morning")]
+        plans, _ = plan_substitutions(absences, SUBS, set(), scores)
+        self.assertEqual(plans[0]["substitute_id"], 14)
+
+    def test_come_back_beats_workload(self):
+        # Even a heavily loaded substitute wins via a higher pair score.
+        scores = {(1, 14): 1}
+        absences = [
+            absence(1, 2, "2026-10-19", "Morning"),
+            absence(2, 1, "2026-10-19", "Morning"),
+        ]
+        plans, _ = plan_substitutions(absences, SUBS, set(), scores)
+        by_teacher = {p["teacher_id"]: p["substitute_id"] for p in plans}
+        self.assertEqual(by_teacher[1], 14)
+
+    def test_stability_beats_come_back(self):
+        # Substitute 12 covered teacher 1 in the morning (score says 14 is
+        # the historic partner); stability keeps 12 for the afternoon.
+        scores = {(1, 14): 9}
+        absences = [
+            absence(1, 1, "2026-10-19", "Morning"),
+            absence(2, 1, "2026-10-19", "Afternoon"),
+        ]
+        plans, _ = plan_substitutions(absences, SUBS, set(), scores)
+        subs = {p["period"]: p["substitute_id"] for p in plans}
+        self.assertEqual(subs["Morning"], subs["Afternoon"])
+
+    def test_no_score_falls_back_to_workload(self):
+        absences = [absence(1, 1, "2026-10-19", "Morning")]
+        plans, _ = plan_substitutions(absences, SUBS, set(), {})
+        self.assertEqual(plans[0]["substitute_id"], 11)
+
 
 if __name__ == "__main__":
     unittest.main()

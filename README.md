@@ -20,6 +20,7 @@ The document contains three tables:
 | `Levels` | `Number` | levels 1–10 for permanent teachers |
 | `Absences` | `Teacher` (Ref), `Date`, `Period` (Morning/Afternoon) | input: who is absent, when, which half-day |
 | `Substitutions` | `Teacher` (Ref), `Substitute` (Ref), `Date`, `Period` | output: who covers whom |
+| `Score` (summary of `Substitutions` grouped by Teacher+Substitute) | `Score` (count of periods covered) | historical pairs used by the come-back rule |
 
 ### Run the matcher
 
@@ -40,6 +41,9 @@ Add `--dry-run` to print the plan without writing to Grist. Use `--server` or
 - A substitute can cover at most one absence per (date, period).
 - **Stability first**: if a substitute covers teacher T on date D in one half,
   they are prioritized to cover T in the other half of D too.
+- **Come-back rule**: next, substitutes are chosen by their historical score
+  with the absent teacher (from the `Score` summary table — the more periods
+  a pair has covered together, the more likely the substitute returns).
 - Otherwise, among free substitutes, the least busy that day is chosen
   (workload balancing).
 - Absences with no free substitute are reported as unmatched; fix by adding

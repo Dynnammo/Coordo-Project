@@ -26,6 +26,7 @@ import urllib.request
 from datetime import date
 
 DEFAULT_SERVER = "https://docs.getgrist.com"
+SCORE_TABLE = "Substitutions_summary_Substitute_Teacher"
 PERIOD_ORDER = {"Morning": 0, "Afternoon": 1}
 
 
@@ -71,22 +72,27 @@ def sort_key(absence):
     return (absence["date"], PERIOD_ORDER.get(absence["period"], 2), absence["id"])
 
 
-def plan_substitutions(absences, substitutes, existing_triples):
-    """Assign a substitute to each half-day absence, favoring stability.
+def plan_substitutions(absences, substitutes, existing_triples, pair_scores=None):
+    """Assign a substitute to each half-day absence.
 
     absences:       list of dicts {id, teacher_id, date, period}
     substitutes:    list of dicts {id, name, status}
     existing_triples: set of (teacher_id, date, period) already covered
+    pair_scores:    dict (teacher_id, substitute_id) -> historical score
 
     Returns (plans, unmatched) where plans is a list of dicts
     {absence_id, teacher_id, substitute_id, date, period}.
 
-    Rules:
-    - A substitute can cover at most one absence per (date, period).
-    - Stability: if a substitute already covers teacher T on date D (in any
-      period), they are prioritized to cover T on D in the other period too.
-    - Otherwise the least-loaded substitute that day wins.
+    Priority when choosing a substitute for an absence:
+    1. Stability: the substitute covering the same teacher the other half of
+       the same day keeps the assignment, if free for this period.
+    2. Come-back: among free substitutes, the one with the highest historical
+       score for this (teacher, substitute) pair is chosen.
+    3. Workload: least assignments that day; ties broken by substitute id.
+
+    A substitute can cover at most one absence per (date, period).
     """
+    pair_scores = pair_scores or {}
     plans = []
     unmatched = []
     load = {}
@@ -100,9 +106,10 @@ def plan_substitutions(absences, substitutes, existing_triples):
         def busy(sub_id):
             return load.get((sub_id, absence["date"], absence["period"]), 0) > 0
 
-        # Stability first: the substitute covering this teacher the other
-        # half of the same day keeps the assignment if free.
         other = "Afternoon" if absence["period"] == "Morning" else "Morning"
+
+        # 1. Stability: the substitute covering this teacher the other half
+        # of the same day keeps the assignment if free.
         partner = covered_by.get((absence["teacher_id"], absence["date"], other))
         if partner is not None and not busy(partner):
             best_id = partner
@@ -115,11 +122,15 @@ def plan_substitutions(absences, substitutes, existing_triples):
             if not candidates:
                 unmatched.append(absence)
                 continue
+            day_load = lambda sid: (
+                load.get((sid, absence["date"], other), 0)
+                + load.get((sid, absence["date"], absence["period"]), 0)
+            )
             best_id = min(
                 (s["id"] for s in candidates),
                 key=lambda sid: (
-                    load.get((sid, absence["date"], other), 0)
-                    + load.get((sid, absence["date"], absence["period"]), 0),
+                    -pair_scores.get((absence["teacher_id"], sid), 0),
+                    day_load(sid),
                     sid,
                 ),
             )
@@ -176,7 +187,16 @@ def fetch_state(client):
             continue
         existing_triples.add((teacher_id, norm_date(date_val), period))
 
-    return teachers, absences, existing_triples
+    pair_scores = {}
+    for r in client.list_records(SCORE_TABLE):
+        teacher_id = r["fields"].get("Teacher")
+        sub_id = r["fields"].get("Substitute")
+        score = r["fields"].get("Score")
+        if teacher_id is None or sub_id is None or score is None:
+            continue
+        pair_scores[(teacher_id, sub_id)] = score
+
+    return teachers, absences, existing_triples, pair_scores
 
 
 def main():
@@ -192,13 +212,13 @@ def main():
 
     client = GristClient(args.server, api_key, args.doc)
     try:
-        teachers, absences, existing_triples = fetch_state(client)
+        teachers, absences, existing_triples, pair_scores = fetch_state(client)
     except urllib.error.URLError as e:
         print(f"Error contacting Grist: {e}", file=sys.stderr)
         return 2
 
     substitutes = [t for t in teachers if t["status"] == "Substitute"]
-    plans, unmatched = plan_substitutions(absences, substitutes, existing_triples)
+    plans, unmatched = plan_substitutions(absences, substitutes, existing_triples, pair_scores)
 
     if not plans:
         print("Nothing to do: every absence already has a substitute (or there are no absences).")
