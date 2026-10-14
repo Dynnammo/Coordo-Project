@@ -21,13 +21,17 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
-from datetime import date
+from datetime import datetime, date, timezone
 
 DEFAULT_SERVER = "https://docs.getgrist.com"
 SCORE_TABLE = "Substitutions_summary_Substitute_Teacher"
 PERIOD_ORDER = {"Morning": 0, "Afternoon": 1}
+REQUEST_TIMEOUT = 30
+REQUEST_RETRIES = 3
+WRITE_BATCH_SIZE = 10
 
 
 class GristClient:
@@ -39,12 +43,25 @@ class GristClient:
     def _request(self, method, path, payload=None):
         url = f"{self.server}/api/docs/{self.doc_id}/tables/{path}"
         data = json.dumps(payload).encode() if payload is not None else None
-        req = urllib.request.Request(url, data=data, method=method)
-        req.add_header("Authorization", f"Bearer {self.api_key}")
-        req.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(req) as resp:
-            body = resp.read().decode()
-        return json.loads(body) if body else None
+        last_error = None
+        for attempt in range(1, REQUEST_RETRIES + 1):
+            req = urllib.request.Request(url, data=data, method=method)
+            req.add_header("Authorization", f"Bearer {self.api_key}")
+            req.add_header("Content-Type", "application/json")
+            try:
+                with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+                    body = resp.read().decode()
+                return json.loads(body) if body else None
+            except (urllib.error.URLError, TimeoutError) as e:
+                last_error = e
+                if attempt < REQUEST_RETRIES:
+                    wait = 2 ** attempt
+                    print(f"  [{method} {path}] attempt {attempt}/{REQUEST_RETRIES} failed: {e}; retrying in {wait}s...",
+                          file=sys.stderr)
+                    time.sleep(wait)
+        raise RuntimeError(
+            f"Grist request failed after {REQUEST_RETRIES} attempts: {method} {path} ({last_error})"
+        )
 
     def list_records(self, table_id):
         page_size = 100
@@ -54,6 +71,8 @@ class GristClient:
                 "GET", f"{table_id}/records?limit={page_size}&offset={len(records)}"
             )
             batch = page.get("records", [])
+            if not batch and not records:
+                break
             records.extend(batch)
             if len(batch) < page_size:
                 break
@@ -66,7 +85,7 @@ class GristClient:
 def to_date_str(value):
     """Normalize a Grist Date cell (epoch seconds or ISO string) to 'YYYY-MM-DD'."""
     if isinstance(value, (int, float)):
-        return date.fromtimestamp(value).isoformat()
+        return datetime.fromtimestamp(value, tz=timezone.utc).date().isoformat()
     return value[:10]
 
 
@@ -150,7 +169,12 @@ def plan_substitutions(absences, substitutes, existing_triples, pair_scores=None
     return plans, unmatched
 
 
-def fetch_state(client):
+def fetch_state(client, verbose=True):
+    def log(msg):
+        if verbose:
+            print(msg, file=sys.stderr)
+
+    log("Fetching Teachers...")
     teachers = [
         {
             "id": r["id"],
@@ -159,10 +183,12 @@ def fetch_state(client):
         }
         for r in client.list_records("Teachers")
     ]
+    log(f"  {len(teachers)} teachers")
 
     def norm_date(v):
         return to_date_str(v) if v is not None else None
 
+    log("Fetching Absences...")
     absences = []
     for r in client.list_records("Absences"):
         teacher_id = r["fields"].get("Teacher")
@@ -180,6 +206,9 @@ def fetch_state(client):
             "period": period,
         })
 
+    log(f"  {len(absences)} absences")
+
+    log("Fetching Substitutions...")
     existing_triples = set()
     for r in client.list_records("Substitutions"):
         teacher_id = r["fields"].get("Teacher")
@@ -189,6 +218,9 @@ def fetch_state(client):
             continue
         existing_triples.add((teacher_id, norm_date(date_val), period))
 
+    log(f"  {len(existing_triples)} already covered")
+
+    log("Fetching Scores...")
     pair_scores = {}
     for r in client.list_records(SCORE_TABLE):
         teacher_id = r["fields"].get("Teacher")
@@ -198,7 +230,19 @@ def fetch_state(client):
             continue
         pair_scores[(teacher_id, sub_id)] = score
 
+    log(f"  {len(pair_scores)} scored pairs")
+
     return teachers, absences, existing_triples, pair_scores
+
+
+def print_progress(current, total, width=30):
+    filled = int(width * current / total)
+    bar = "#" * filled + "." * (width - filled)
+    percent = int(100 * current / total)
+    sys.stdout.write(f"\r[{bar}] {current}/{total} ({percent}%)")
+    sys.stdout.flush()
+    if current == total:
+        sys.stdout.write("\n")
 
 
 def main():
@@ -215,7 +259,7 @@ def main():
     client = GristClient(args.server, api_key, args.doc)
     try:
         teachers, absences, existing_triples, pair_scores = fetch_state(client)
-    except urllib.error.URLError as e:
+    except (urllib.error.URLError, RuntimeError) as e:
         print(f"Error contacting Grist: {e}", file=sys.stderr)
         return 2
 
@@ -240,18 +284,24 @@ def main():
         print("\nDry run: nothing written to Grist.")
         return 0
 
-    client.add_records("Substitutions", [
-        {
-            "fields": {
-                "Teacher": p["teacher_id"],
-                "Substitute": p["substitute_id"],
-                "Date": p["date"],
-                "Period": p["period"],
+    print(f"\nWriting {len(plans)} substitution(s) to Grist...")
+    written = 0
+    for i in range(0, len(plans), WRITE_BATCH_SIZE):
+        batch = plans[i:i + WRITE_BATCH_SIZE]
+        client.add_records("Substitutions", [
+            {
+                "fields": {
+                    "Teacher": p["teacher_id"],
+                    "Substitute": p["substitute_id"],
+                    "Date": p["date"],
+                    "Period": p["period"],
+                }
             }
-        }
-        for p in plans
-    ])
-    print(f"\nWrote {len(plans)} row(s) to the Substitutions table.")
+            for p in batch
+        ])
+        written += len(batch)
+        print_progress(written, len(plans))
+    print(f"Wrote {written} row(s) to the Substitutions table.")
     return 0
 
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from grist_match import GristClient, plan_substitutions, to_date_str
+from grist_match import GristClient, plan_substitutions, print_progress, to_date_str
 
 SUBS = [
     {"id": 11, "name": "Alice Dupont", "status": "Substitute"},
@@ -38,6 +38,67 @@ class TestListRecordsPagination(unittest.TestCase):
         client = GristClient("https://example", "key", "doc")
         client._request = lambda method, path, payload=None: {"records": [{"id": 1, "fields": {}}]}
         self.assertEqual(len(client.list_records("T")), 1)
+
+
+class TestRequestRetry(unittest.TestCase):
+    def _patch(self, flaky):
+        import grist_match
+        orig_sleep, orig_urlopen = grist_match.time.sleep, grist_match.urllib.request.urlopen
+        grist_match.time.sleep = lambda s: None
+        grist_match.urllib.request.urlopen = flaky
+        self.addCleanup(lambda: (setattr(grist_match.time, "sleep", orig_sleep),
+                                 setattr(grist_match.urllib.request, "urlopen", orig_urlopen)))
+
+    def test_retries_then_succeeds(self):
+        client = GristClient("https://example", "key", "doc")
+        calls = {"n": 0}
+
+        class Resp:
+            def read(self):
+                return b'{"records": []}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def flaky(req, timeout=None):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise TimeoutError("simulated timeout")
+            return Resp()
+
+        self._patch(flaky)
+        self.assertEqual(client.list_records("T"), [])
+        self.assertEqual(calls["n"], 3)
+
+    def test_gives_up_after_max_retries(self):
+        client = GristClient("https://example", "key", "doc")
+        calls = {"n": 0}
+
+        def always_fail(req, timeout=None):
+            calls["n"] += 1
+            raise TimeoutError("down")
+
+        self._patch(always_fail)
+        with self.assertRaises(RuntimeError):
+            client.list_records("T")
+        self.assertEqual(calls["n"], 3)
+
+
+class TestProgress(unittest.TestCase):
+    def test_print_progress_completes(self):
+        import io
+        import contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            print_progress(3, 3)
+            print_progress(0, 3)
+            print_progress(3, 3)
+        out = buf.getvalue()
+        self.assertIn("3/3 (100%)", out)
+        self.assertIn("\n", out)
 
 
 class TestToDateStr(unittest.TestCase):
