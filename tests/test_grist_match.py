@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from grist_match import plan_substitutions, to_date_str
+from grist_match import GristClient, plan_substitutions, to_date_str
 
 SUBS = [
     {"id": 11, "name": "Alice Dupont", "status": "Substitute"},
@@ -16,6 +16,28 @@ SUBS = [
 
 def absence(aid, teacher_id, date, period):
     return {"id": aid, "teacher_id": teacher_id, "date": date, "period": period}
+
+
+class TestListRecordsPagination(unittest.TestCase):
+    def test_multi_page_without_total_key(self):
+        """The public Grist API returns no 'total': pagination must stop when
+        a page returns fewer records than the page size."""
+        client = GristClient("https://example", "key", "doc")
+
+        def fake_request(method, path, payload=None):
+            offset = int(path.split("offset=")[1])
+            if offset == 0:
+                return {"records": [{"id": i, "fields": {}} for i in range(100)]}
+            return {"records": [{"id": i, "fields": {}} for i in range(100, 142)]}
+
+        client._request = fake_request
+        records = client.list_records("Teachers")
+        self.assertEqual(len(records), 142)
+
+    def test_single_page(self):
+        client = GristClient("https://example", "key", "doc")
+        client._request = lambda method, path, payload=None: {"records": [{"id": 1, "fields": {}}]}
+        self.assertEqual(len(client.list_records("T")), 1)
 
 
 class TestToDateStr(unittest.TestCase):

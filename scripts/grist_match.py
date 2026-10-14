@@ -47,13 +47,15 @@ class GristClient:
         return json.loads(body) if body else None
 
     def list_records(self, table_id):
+        page_size = 100
         records = []
-        offset = 0
         while True:
-            page = self._request("GET", f"{table_id}/records?limit=100&offset={offset}")
-            records.extend(page["records"])
-            offset += len(page["records"])
-            if len(records) >= page["total"]:
+            page = self._request(
+                "GET", f"{table_id}/records?limit={page_size}&offset={len(records)}"
+            )
+            batch = page.get("records", [])
+            records.extend(batch)
+            if len(batch) < page_size:
                 break
         return records
 
