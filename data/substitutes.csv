@@ -1,11 +1,11 @@
-name,subject,days_available,max_per_day
-Alice Dupont,Math,"mon,tue,wed,thu,fri",4
-Bob Martin,English,"mon,tue,wed,thu,fri",5
-Claire Fontaine,Math,"mon,wed,fri",4
-David Leroy,Physics,"mon,tue,thu",3
-Emma Moreau,English,"tue,thu",6
-Fred Girard,History,"mon,tue,wed,thu,fri",4
-Grace Nguyen,Math,"tue,thu",5
-Henry Petit,Physics,"mon,wed,fri",4
-Isabelle Roy,English,"mon,fri",3
-Jack Dubois,History,"tue,wed,thu",3
+name,days_available,max_per_day
+Alice Dupont,"mon,tue,wed,thu,fri",4
+Bob Martin,"mon,tue,wed,thu,fri",5
+Claire Fontaine,"mon,wed,fri",4
+David Leroy,"mon,tue,thu",3
+Emma Moreau,"tue,thu",6
+Fred Girard,"mon,tue,wed,thu,fri",4
+Grace Nguyen,"tue,thu",5
+Henry Petit,"mon,wed,fri",4
+Isabelle Roy,"mon,fri",3
+Jack Dubois,"tue,wed,thu",3

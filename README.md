@@ -15,7 +15,7 @@ The document contains three tables:
 
 | table | columns | role |
 |---|---|---|
-| `Teachers` | `Name`, `Status` (Permanent/Substitute), `Subject` | everyone, permanent and substitutes |
+| `Teachers` | `Name`, `Status` (Permanent/Substitute) | everyone, permanent and substitutes |
 | `Absences` | `Teacher` (Ref), `Date` | input: who is absent, when |
 | `Substitutions` | `Teacher` (Ref), `Substitute` (Ref), `Date` | output: who covers whom |
 
@@ -32,9 +32,9 @@ Add `--dry-run` to print the plan without writing to Grist. Use `--server` or
 ### Matching rules
 
 - Every absence with no existing `Substitutions` row is processed (earliest date first).
+- Any substitute can replace any absent teacher: subjects are not a constraint.
 - A substitute can cover at most one absence per date.
-- Candidates are scored: subject match with the absent teacher (+10), minus
-  current workload that day (-1 per assignment) — same subject and least-busy win.
+- Among free substitutes, the least busy that day is chosen (workload balancing).
 - Absences with no free substitute are reported as unmatched; fix by adding
   substitutes or adjusting dates, then rerun.
 
@@ -51,11 +51,8 @@ The matching engine assigns one substitute to each absence using a score:
 1. **Availability filter** — a substitute is only eligible for an absence they
    are available on (same day, and they don't already have an assignment that
    day if `max_per_day` is reached).
-2. **Scoring** — eligible substitutes are ranked by:
-   - `subject_match` (highest weight): does the substitute teach the same
-     subject as the absent teacher?
-   - `availability` (lowest weight): a small penalty for substitutes who are
-     already covering many periods that day (workload balancing).
+2. **Scoring** — any substitute can replace any teacher (no subject
+   constraint); among eligible substitutes, the least busy that day wins.
 3. **Greedy assignment** — absences are processed in order (earliest first),
    and each absence takes the highest-scoring free substitute.
 4. **Reporting** — unmatched absences are reported clearly so the dispatcher
@@ -68,7 +65,6 @@ The matching engine assigns one substitute to each absence using a score:
 | column | description |
 |---|---|
 | `name` | Substitute's name (unique) |
-| `subject` | Primary subject taught (e.g., `Math`, `English`) |
 | `days_available` | Comma-separated days they can work, e.g. `mon,tue,wed` |
 | `max_per_day` | Max number of periods they can cover per day |
 
@@ -77,7 +73,6 @@ The matching engine assigns one substitute to each absence using a score:
 | column | description |
 |---|---|
 | `teacher` | Name of the absent teacher |
-| `subject` | Subject of the class needing coverage |
 | `day` | Day of the absence, e.g. `mon` |
 | `period` | Period number(s) needing coverage, e.g. `1` or `1,2,3` |
 

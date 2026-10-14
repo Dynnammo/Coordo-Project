@@ -20,34 +20,33 @@ class TestMatching(unittest.TestCase):
             self.assertIn(a.day, ("mon", "tue", "wed", "thu", "fri"))
             self.assertTrue(a.periods)
 
-    def test_subject_match_preferred(self):
-        math_sub = Substitute("M1", "Math", ["mon"], 1)
-        other_sub = Substitute("X1", "History", ["mon"], 1)
-        absence = Absence("Smith", "Math", "mon", [1])
-        assignments, unmatched = match([absence], [other_sub, math_sub])
-        self.assertEqual(assignments[0][1], math_sub)
+    def test_any_substitute_can_cover_any_absence(self):
+        history_only = Substitute("H1", ["mon"], 1)
+        absence = Absence("Smith", "mon", [1])
+        assignments, unmatched = match([absence], [history_only])
+        self.assertEqual(assignments[0][1], history_only)
         self.assertEqual(unmatched, [])
 
-    def test_workload_balancing(self):
-        busy = Substitute("Busy", "Math", ["mon"], 5)
-        free = Substitute("Free", "Math", ["mon"], 5)
+    def test_least_loaded_substitute_preferred(self):
+        busy = Substitute("Busy", ["mon"], 5)
+        free = Substitute("Free", ["mon"], 5)
         busy.assignments = [("mon", 1), ("mon", 2)]
-        absences = [Absence("A", "Math", "mon", [p]) for p in (3, 4)]
+        absences = [Absence("A", "mon", [p]) for p in (3, 4)]
         assignments, unmatched = match(absences, [busy, free])
         self.assertEqual(len(assignments), 2)
         self.assertEqual(unmatched, [])
         self.assertTrue(all(sub is free for _, sub in assignments))
 
     def test_max_per_day_respected(self):
-        limited = Substitute("L", "Math", ["mon"], 1)
-        absences = [Absence("A", "Math", "mon", [1]), Absence("B", "Math", "mon", [2])]
+        limited = Substitute("L", ["mon"], 1)
+        absences = [Absence("A", "mon", [1]), Absence("B", "mon", [2])]
         assignments, unmatched = match(absences, [limited])
         self.assertEqual(len(assignments), 1)
         self.assertEqual(len(unmatched), 1)
 
     def test_day_availability_respected(self):
-        sub = Substitute("S", "Math", ["tue"], 5)
-        absence = Absence("A", "Math", "mon", [1])
+        sub = Substitute("S", ["tue"], 5)
+        absence = Absence("A", "mon", [1])
         assignments, unmatched = match([absence], [sub])
         self.assertEqual(assignments, [])
         self.assertEqual(unmatched, [absence])

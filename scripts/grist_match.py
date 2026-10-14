@@ -22,7 +22,6 @@ import urllib.request
 from datetime import date
 
 DEFAULT_SERVER = "https://docs.getgrist.com"
-SUBJECT_WEIGHT = 10
 WORKLOAD_WEIGHT = 1
 
 
@@ -71,8 +70,8 @@ def day_of(date_str):
 def plan_substitutions(absences, substitutes, existing_pairs):
     """Assign a substitute to each absence.
 
-    absences:       list of dicts {id, teacher_id, teacher_subject, date}
-    substitutes:    list of dicts {id, name, subject}
+    absences:       list of dicts {id, teacher_id, date}
+    substitutes:    list of dicts {id, name, status}
     existing_pairs: set of (teacher_id, date) already covered by Substitutions
 
     Returns (plans, unmatched) where plans is a list of dicts
@@ -82,13 +81,6 @@ def plan_substitutions(absences, substitutes, existing_pairs):
     unmatched = []
     load = {}
 
-    def subject_of(teacher_id):
-        for s in substitutes:
-            if s["id"] == teacher_id:
-                return s["subject"]
-        return None
-
-    by_id = {s["id"]: s for s in substitutes}
     for absence in sorted(absences, key=lambda a: (a["date"], a["id"])):
         if (absence["teacher_id"], absence["date"]) in existing_pairs:
             continue
@@ -101,14 +93,10 @@ def plan_substitutions(absences, substitutes, existing_pairs):
             unmatched.append(absence)
             continue
 
-        def score(s):
-            value = 0
-            if s["subject"] == absence["teacher_subject"]:
-                value += SUBJECT_WEIGHT
-            value -= load.get((s["id"], absence["date"]), 0) * WORKLOAD_WEIGHT
-            return (value, -s["id"])
-
-        best = max(candidates, key=score)
+        best = min(
+            candidates,
+            key=lambda s: (load.get((s["id"], absence["date"]), 0), s["id"]),
+        )
         load[(best["id"], absence["date"])] = load.get((best["id"], absence["date"]), 0) + 1
         plans.append({
             "absence_id": absence["id"],
@@ -143,7 +131,6 @@ def fetch_state(client):
         absences.append({
             "id": r["id"],
             "teacher_id": teacher_id,
-            "teacher_subject": teacher["subject"],
             "date": date_str,
         })
 
