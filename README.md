@@ -32,6 +32,25 @@ python scripts/grist_match.py --doc mdRfs6ggKhKUkuhqpW1xA6
 Add `--dry-run` to print the plan without writing to Grist. Use `--server` or
 `GRIST_SERVER` for a self-hosted instance.
 
+### Access rules
+
+Row-level security (see `docs/ACCESS_RULES.md`) is applied with:
+
+```bash
+python scripts/grist_acl.py --doc mdRfs6ggKhKUkuhqpW1xA6 --dry-run  # preview
+python scripts/grist_acl.py --doc mdRfs6ggKhKUkuhqpW1xA6           # apply
+```
+
+It adds the `Email` column to `Teachers` if missing, then creates the ACL
+rules: teachers and substitutes see only the `Substitutions` rows concerning
+them, permanent teachers see their own `Absences`, the `Email` column is
+owner-only, and all writes are dispatcher-only. The script is idempotent —
+rerunning skips rules that already exist.
+
+Prerequisite: share the doc with each teacher as viewer (Access Rules filter
+rows; they do not grant document access), and fill `Teachers.Email` with the
+exact Grist account emails.
+
 Note: the Grist REST API has no offset-based pagination — `limit` only
 truncates to the first N records. The client therefore fetches each table in
 a single unbounded request, so tables of any size work.
